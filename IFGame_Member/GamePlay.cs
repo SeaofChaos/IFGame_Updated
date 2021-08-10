@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
+
 namespace IFGame
 {
     class GamePlay
@@ -19,19 +20,19 @@ namespace IFGame
 
             while (runGame)     //loop to run until the player exits the game
             {
-                //code for game goes here
 
+                //code for game goes here
 
 
                 //Display text like diologue \/
                 outputText = "This is how you print out code in the game";
-                menuObject.slowtextOutput(outputText);
+                menuObject.slowTextOutput(outputText);
 
 
                 //How to create choices and display them \/
                 listChoices = new string[] {"Ok cool. Now take me back to the main menu",
                                                 "Output this text again." };
-                playerChoice = menuObject.displayMenu(listChoices, 1);
+                playerChoice = menuObject.displayMenu(listChoices, 0);
 
 
                 //Do something depending on menu choice \/
@@ -45,6 +46,7 @@ namespace IFGame
             }
         }
 
+        [STAThread]
         static void Main(string[] args)
         {
             GameMenu game = new GameMenu();

@@ -1,21 +1,50 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Windows.Input;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using System.IO;
 
-//Things I need to do: disable input when text is outputting, make it so enter can skip text output,
-//finish the settings menus, comment better, 
+//Things I need to do: finish the settings menus, comment better, work on the custom file input, update
+//the github to make it look like an actual project, 
+
+//I so far am able to open a file and put the file contents into a string, but I need to create
+//a system in order to perform actions based on certain characters or commands in the file.
+//For example, /d could be to indicate dialogue following. /m could indicate menu options separated
+//by a '.' or '\n'. I should also implement a /help command first. I should also add a way to allow for
+//custom art to be added (the art has to use printable characters.
 namespace IFGame
 {
+    public class gameOption
+    {
+        public String dialogue;
+        public String menu;
+
+        public gameOption()
+        {
+            dialogue = String.Empty;
+            menu = String.Empty;
+        }
+
+        public gameOption(String d, String m, int i){
+            dialogue = d;
+            menu = m;
+        }
+    }
     public class GameMenu
     {
         public static int ScreenWidth = 100;    //How wide the text is able to be displayed on the console
         public static int TextSpeed = 20;       //How fast the text is printed out
         public static int DialogueSpeed = 1200; //How fast the different pieces of diologue are printed out (aka, the time between chunks of sentences)
         public int index = 0;                   //Keeps track of \which item in a menu is currently selected (the one with inverted colors)
-        int lineBetweenChoices = 0;     //do you want lines between the menu options?
         public void startGame()
         {
-            string[] titleMenu = { "Start", "Settings", "Controls", "Credits", "Exit" };    //title screen menu options
+            [DllImport("kernel32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            static extern bool AllocConsole();
+
+            AllocConsole();
+
+            string[] titleMenu = { "Start", "Settings", "Controls", "Open File", "Credits", "Exit" };    //title screen menu options
             string loadingDots = "...";                 //It doesn't need to load, but I like the way it looks haha
             GamePlay accessGamePlay = new GamePlay();   //GamePlay object instance
             int menuSelection = 0;                      //Keeps track of which item on a menu is selected
@@ -37,7 +66,7 @@ namespace IFGame
             System.Threading.Thread.Sleep(800);
             Console.Clear();
 
-            while (menuSelection != 5)  //while menu selection isn't "Exit"
+            while (menuSelection != 6)  //while menu selection isn't "Exit"
             {
                 if (keepAbout)
                 {
@@ -64,7 +93,22 @@ namespace IFGame
                 {
 
                 }
-                if (menuSelection == 4) //"About" prints off the information about the creator and maybe any assets used
+                if (menuSelection == 4)
+                {
+                    String fileContent = getFile();
+
+                    //checks for invalid file, i should do this as an else in the member function cause
+                    //there is an if statement that checks if the file is valid
+                    if (fileContent == String.Empty) 
+                    {
+                        Console.WriteLine("\nFile is invalid or empty. Returning to main menu...");
+                        System.Threading.Thread.Sleep(1500);
+                    }
+
+                    runFromFile(fileContent);
+                    //I need to do something with this file string /\
+                }
+                if (menuSelection == 5) //"About" prints off the information about the creator and maybe any assets used
                 {
                     openingMessage();
                     linestoErase += 7;
@@ -90,11 +134,7 @@ namespace IFGame
             //put opening message here if you want one
         }
 
-        /*
-         * C# Menu Code idea from: https://www.youtube.com/watch?v=1ydSw4afA1o
-         * Used in methods displayMenu() and drawMenu()
-         */
-        public int displayMenu(string[] menuOptions)
+        public int displayMenu(string[] menuOptions)    //used for main menu
         {
             List<string> menuItems = new List<string>();
             int totalChoiceLines = menuOptions.Length;
@@ -102,11 +142,12 @@ namespace IFGame
             int choiceNumber = 0;   //Holds the index of the menu option that has been chosen
             int lineBetweenChoices = 0;
 
-            for (int i = 0; i < menuOptions.Length; i++)
+            for (int i = 0; i < menuOptions.Length; i++) //removes \n character from each menu string
             {
                 stringItr = 0;
 
-                for (int j = 0; j < menuOptions[i].Length; j++)     //Combines the strings that contain a \n character to keep the number of characaters in a line accurate
+                //Combines the characters into a string without the \n characters
+                for (int j = 0; j < menuOptions[i].Length; j++)
                 {
                     if ((stringItr > ScreenWidth) && (menuOptions[i][j] == ' '))
                     {
@@ -121,9 +162,7 @@ namespace IFGame
 
             //Keeps track of how many lines to erase depending on number of menu options
             if (lineBetweenChoices == 1)
-            {
                 totalChoiceLines += menuOptions.Length + 1;
-            }
 
             for (int i = 0; i < menuOptions.Length; i++)
             {
@@ -132,20 +171,19 @@ namespace IFGame
             }
 
             for (int i = 0; i <= totalChoiceLines; i++)
-            {
                 Console.Write("\n");
-            }
 
-            while (choiceNumber == 0)
+            while (choiceNumber == 0 && !(
+                Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Enter
+                && Console.ReadKey(true).Key == ConsoleKey.UpArrow
+                && Console.ReadKey(true).Key == ConsoleKey.DownArrow))
             {
-                clearMenu(totalChoiceLines);
-                choiceNumber = drawMenu(menuItems, lineBetweenChoices);
+                choiceNumber = drawMenu(menuItems, lineBetweenChoices, totalChoiceLines);
             }
-
             return choiceNumber;
         }
 
-        public int displayMenu(string[] menuOptions, int displayLines)
+        public int displayMenu(string[] menuOptions, int displayLines)  //used for game menu
         {
             List<string> menuItems = new List<string>();
             int totalChoiceLines = menuOptions.Length;
@@ -186,80 +224,87 @@ namespace IFGame
                 Console.Write("\n");
             }
 
-            while (choiceNumber == 0)
-            {
-                clearMenu(totalChoiceLines);
-                choiceNumber = drawMenu(menuItems, displayLines);
-            }
+            while (Console.KeyAvailable)
+                Console.ReadKey(true);
+
+            choiceNumber = drawMenu(menuItems, displayLines, totalChoiceLines);
 
             return choiceNumber;
         }
 
         //Helper of displayMenu to keep track of the keypresses and which menu item is selected. Returns selected item's index            
-        private int drawMenu(List<string> menuItems, int lineBetweenChoices)
+        private int drawMenu(List<string> menuItems, int lineBetweenChoices, int totalChoiceLines)
         {
-            for (int listIndex = 0; listIndex < menuItems.Count; listIndex++)  //Makes sure the index currently selected exists on the menu
+            while (true)
             {
-                if (listIndex == index)
+                clearMenu(totalChoiceLines);
+                //Makes sure the index currently selected exists on the menu
+                for (int listIndex = 0; listIndex < menuItems.Count; listIndex++)
                 {
-                    if (lineBetweenChoices == 1) //inverts the colors of the selected menu item
+                    if (listIndex == index)
                     {
-                        Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
+                        if (lineBetweenChoices == 1) //inverts the colors of the selected menu item
+                        {
+                            Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
+                        }
+
+                        Console.BackgroundColor = ConsoleColor.White;
+                        Console.ForegroundColor = ConsoleColor.Black;
+
+                        Console.WriteLine(menuItems[listIndex]);
+                    }
+                    else
+                    {
+                        if (lineBetweenChoices == 1)
+                        {
+                            Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
+                        }
+
+                        Console.WriteLine(menuItems[listIndex]);
                     }
 
-                    Console.BackgroundColor = ConsoleColor.White;
-                    Console.ForegroundColor = ConsoleColor.Black;
 
-                    Console.WriteLine(menuItems[listIndex]);
+                    Console.ResetColor();
+                }
+
+                if (lineBetweenChoices == 1)
+                {
+                    Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
+                }
+
+                System.ConsoleKey keyPress = Console.ReadKey(true).Key;
+
+                //determines what action to take on a menu depending on what key is pressed
+                if (!(keyPress == ConsoleKey.Enter
+                    || keyPress == ConsoleKey.UpArrow
+                    || keyPress == ConsoleKey.DownArrow))
+                    continue;
+
+                if (keyPress == ConsoleKey.DownArrow)
+                {
+                    if (!(menuItems.Count - 1 == index))
+                    {
+                        index++;
+                    }
+                }
+
+                else if (keyPress == ConsoleKey.UpArrow)
+                {
+                    if (!(index <= 0))
+                    {
+                        index--;
+                    }
+                }
+
+                else if (keyPress == ConsoleKey.Enter)
+                {
+                    return index + 1;
                 }
                 else
                 {
-                    if (lineBetweenChoices == 1)
-                    {
-                        Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
-                    }
-
-                    Console.WriteLine(menuItems[listIndex]);
-                }
-
-
-                Console.ResetColor();
-            }
-
-            if (lineBetweenChoices == 1)
-            {
-                Console.Write("- - - - - - - - - - - - - - - - - - - - - - - - -\n");
-            }
-
-            //determines what action to take on a menu depending on what key is pressed
-            ConsoleKeyInfo keyPress = Console.ReadKey();
-
-            if (keyPress.Key == ConsoleKey.DownArrow)
-            {
-                if (!(menuItems.Count - 1 == index))
-                {
-                    index++;
+                    return 0;
                 }
             }
-
-            else if (keyPress.Key == ConsoleKey.UpArrow)
-            {
-                if (!(index <= 0))
-                {
-                    index--;
-                }
-            }
-
-            else if (keyPress.Key == ConsoleKey.Enter)
-            {
-                return index + 1;
-            }
-            else
-            {
-                return 0;
-            }
-
-            return 0;
         }
 
         static void titleMessage()
@@ -267,7 +312,6 @@ namespace IFGame
             //put title here
         }
 
-        //Implemented from https://stackoverflow.com/questions/8946808/can-console-clear-be-used-to-only-clear-a-line-instead-of-whole-console
         private static void ClearCurrentConsoleLine()
         {
             int currentLineCursor = Console.CursorTop;
@@ -287,34 +331,23 @@ namespace IFGame
         }
 
         //Outputs strings in a nice typing like format.
-        public void slowtextOutput(string outputText)
+        public void slowTextOutput(string outputText)
         {
             int originalTextSpeed = GameMenu.TextSpeed;
-            int letterCount = 0;    //keeps track of how many characters are in a single line to prevent going past the defined ScreenWidth
+            int letterCount = 0, i = 0;    //keeps track of how many characters are in a single line to prevent going past the defined ScreenWidth
             System.Threading.Thread.Sleep(GameMenu.DialogueSpeed);
 
-            for (int i = 0; i < outputText.Length; i++)  //prints out string with a small delay between each character
+            while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Enter) && i < outputText.Length)
             {
-                if (System.Windows.Input.Keyboard.IsKeyDown())  //i need to determine if key is being held down to speed up character printing
-                {
-                    GameMenu.TextSpeed *= 2;
-                }
-                else
-                {
-                    GameMenu.TextSpeed = originalTextSpeed;
-                }
 
                 System.Threading.Thread.Sleep(GameMenu.TextSpeed);
+
                 Console.Write(outputText[i]);
 
-                if (outputText[i] == '\\')
+                if (outputText[i] == '\n')
                 {
-                    if (outputText[i + 1] == 'n')
-                    {
-                        letterCount = 0;
-                    }
+                    letterCount = 0;
                 }
-
                 if (letterCount != GameMenu.ScreenWidth)
                 {
                     letterCount++;
@@ -325,10 +358,53 @@ namespace IFGame
                     Console.Write("\n");
                     letterCount = 0;
                 }
+                ++i;
+            }
+
+            if (i < outputText.Length)
+            {
+                string temp = outputText.Substring(i);
+                Console.Write(temp);
             }
 
             Console.Write("\n");
             System.Threading.Thread.Sleep(GameMenu.DialogueSpeed);
+        }
+
+        //goes really fast for sudden stuff or system messages
+        public void instantTextOutput(string outputText)
+        {
+            int originalTextSpeed = GameMenu.TextSpeed;
+            int letterCount = 0, i = 0;    //keeps track of how many characters are in a single line to prevent going past the defined ScreenWidth
+
+            while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Enter) && i < outputText.Length)
+            {
+                Console.Write(outputText[i]);
+
+                if (outputText[i] == '\n')
+                {
+                    letterCount = 0;
+                }
+                if (letterCount != GameMenu.ScreenWidth)
+                {
+                    letterCount++;
+                }
+
+                if ((letterCount == GameMenu.ScreenWidth) && (outputText[i] == ' '))
+                {
+                    Console.Write("\n");
+                    letterCount = 0;
+                }
+                ++i;
+            }
+
+            if (i < outputText.Length)
+            {
+                string temp = outputText.Substring(i);
+                Console.Write(temp);
+            }
+
+            Console.Write("\n");
         }
 
         private void gameSettings()
@@ -439,6 +515,294 @@ namespace IFGame
                     selectedExit = 1;
                 }
             }
+        }
+        
+        public String getFile()
+        {
+            String filePath = String.Empty;
+            String fileContent = String.Empty;
+            OpenFileDialog ofd = new OpenFileDialog(); //create a file explorer instance to browse for a file
+            ofd.InitialDirectory = "c:\\Users\\Desktop";
+            ofd.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
+            ofd.FilterIndex = 2;
+            ofd.RestoreDirectory = true;
+
+            if (ofd.ShowDialog() == DialogResult.OK) //run once a good file is selected
+            {
+                filePath = ofd.FileName;
+
+                var fileStream = ofd.OpenFile();
+
+                using (StreamReader reader = new StreamReader(fileStream))
+                {
+                    fileContent = reader.ReadToEnd();
+                }
+            }
+            return fileContent;
+        }
+
+        public void runFromFile(String text)
+        {
+            if (text.Length == 0) return;
+
+            int lineNum = 0;
+            Dictionary<int, gameOption> inputOptions = new Dictionary<int, gameOption>();
+
+            for (int i=0; i<text.Length; ++i)
+            {
+                if (text[i] == '\n') { ++lineNum; }
+
+                if (text[i] == '/')
+                {
+                    if (text[i + 1] == '/')
+                        continue;
+
+                    if (text[i + 1] == 'd') //diologue
+                    {
+                        string tempID = "";
+                        int ID = 0;
+                        string dialogue = String.Empty;
+                        string menu = String.Empty;
+
+                        try
+                        {
+                            for (int j = i + 3; text[j] != ' ' && text[j] != '\n' && text[j] != '\t'; ++j)
+                            {
+                                tempID += text[j];
+                            }
+                            ID = int.Parse(tempID);
+                        }
+                        catch (Exception e)
+                        {
+                            instantTextOutput("\nThere was an error with the dialogue number on line "
+                                + lineNum + ". Please check it and try again. Make sure it starts exactly 1 space behind"
+                                + " the command and that it is a whole number.");
+                            Console.ReadKey();
+                            break;
+                        }
+
+                        dialogue = customDialogue(ref text, ref i, ref lineNum);
+                        
+                        if (dialogue == String.Empty) //if dialogue is blank or if there is no '|' character
+                            break;
+
+                        if (inputOptions.ContainsKey(ID)) //if the key already exists
+                        {
+                            instantTextOutput("\nThe inputted ID " + ID + " on line " + lineNum +
+                                " is already assigned with the dialogue: \"" + inputOptions[ID].dialogue + "\"\n\nPlease change the ID.");
+                            instantTextOutput("\nPress any key to continue.");
+                            Console.ReadKey();
+                            break;
+                        }
+                        inputOptions[ID] = new gameOption(dialogue, menu, ID);
+                    }
+                    else if (text[i + 1] == 'm')  //menu options
+                    {
+                        string menu = String.Empty;
+                        string tempID = "";
+                        int ID = 0;
+
+                        try
+                        {
+                            for (int j = i + 3; text[j] != ' ' && text[j] != '\n' && text[j] != '\t'; ++j)
+                            {
+                                tempID += text[j];
+                            }
+                            ID = int.Parse(tempID);
+                        }
+                        catch (Exception e)
+                        {
+                            instantTextOutput("\nThere was an error with the dialogue number on line "
+                                + lineNum + ". Please check it and try again. Make sure it starts exactly 1 space behind"
+                                + " the command and that it is a whole number.");
+                            Console.ReadKey();
+                            break;
+                        }
+
+                        menu = customMenu(ref text, ref i, ref lineNum);
+
+                        instantTextOutput(menu);
+                        Console.ReadKey();
+
+                        if (menu == String.Empty) //if dialogue is blank or if there is no '|' character
+                            break;
+
+                        try
+                        {
+                            inputOptions[ID].menu = menu;
+                        }
+                        catch (Exception e)
+                        {
+                            instantTextOutput("\nThe ID provided is currently empty. Make sure there is a previous piece of dialogue assigned to it"
+                                + "\nPress enter to continue");
+
+                            while (Console.KeyAvailable)
+                            {
+                                Console.ReadKey(true);
+                            }
+
+                            while (Console.ReadKey(true).Key != ConsoleKey.Enter) { }
+                            break;
+                        }
+                    }
+                    else if (text[i + 1] == 't')  //title picture
+                    {
+
+                    }
+                    else if (text[i + 1] == 's')    //text speed
+                    {
+
+                    }
+                }
+            }
+        }
+        private String customDialogue(ref string text, ref int i, ref int lineNum)
+        {
+            String dialogue = String.Empty;
+
+            while (text[i] != '\r' && text[i+1] != '\n')
+                ++i;
+            ++i;
+            ++lineNum;
+
+            try
+            {
+                if(RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    for(; text[i] != '|'; ++i)
+                    {
+                        if (text[i] == '\r' && text[i + 1] == '\n')
+                        {
+                            ++lineNum;
+                            if (text[i + 2] == '\r' && text[i+3] == '\n')
+                            {
+                               ++i;
+                                ++lineNum;
+                              continue;
+                            }
+                            ++i;
+                            dialogue += ' ';
+                            continue;
+                        }
+
+                        dialogue += text[i];
+
+                        if (text[i] == '/')
+                        {
+                            if (text[i+1] == 'd' || text[i+1] == 'm' || text[i + 1] == 't' 
+                                || text[i + 1] == 's')
+                            {
+                                throw new FormatException();
+                            }
+                        }
+                    }
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    for (; text[i] != '|'; ++i)
+                    {
+                        if (text[i] == '\n')
+                        {
+                            ++lineNum;
+                            if (text[i + 1] == '\n')
+                            {
+                                ++lineNum;
+                                ++i;
+                                continue;
+                            }
+                            ++i;
+                            dialogue += ' ';
+                            continue;
+                        }
+
+                        dialogue += text[i];
+
+                        if (text[i] == '/')
+                        {
+                            if (text[i + 1] == 'd' || text[i + 1] == 'm' || text[i + 1] == 't'
+                                || text[i + 1] == 's')
+                            {
+                                throw new FormatException();
+                            }
+                        }
+                    }
+            }
+            catch (Exception e)
+            {
+                instantTextOutput("\nNo end character '|' found (sentinal value). Check around line " + lineNum + " for a missing '|'.");
+                instantTextOutput("\nClick any key to continue.");
+                Console.ReadKey();
+                return String.Empty;
+            }
+            return dialogue;
+        }
+
+        private String customMenu(ref String text, ref int i, ref int lineNum)
+        {
+            String menu = String.Empty;
+
+
+            while (text[i] != '\r' && text[i + 1] != '\n')
+                ++i;
+            ++i;
+            ++lineNum;
+
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    for (; text[i] != '|'; ++i)
+                    {
+                        if (text[i] == '\r' && text[i + 1] == '\n')
+                        {
+                            if (text[i + 2] == '\r' && text[i + 3] == '\n')
+                            {
+                                ++i;
+                                ++lineNum;
+                                continue;
+                            }
+                        }
+
+                        menu += text[i];
+
+                        if (text[i] == '/')
+                        {
+                            if (text[i + 1] == 'd' || text[i + 1] == 'm' || text[i + 1] == 't'
+                                || text[i + 1] == 's')
+                            {
+                                throw new FormatException();
+                            }
+                        }
+                    }
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    for (; text[i] != '|'; ++i)
+                    {
+                        if (text[i] == '\n')
+                        {
+                            if (text[i + 1] == '\n')
+                            {
+                                ++lineNum;
+                                ++i;
+                                continue;
+                            }
+                        }
+
+                        menu += text[i];
+
+                        if (text[i] == '/')
+                        {
+                            if (text[i + 1] == 'd' || text[i + 1] == 'm' || text[i + 1] == 't'
+                                || text[i + 1] == 's')
+                            {
+                                throw new FormatException();
+                            }
+                        }
+                    }
+            }
+            catch (Exception e)
+            {
+                instantTextOutput("\nNo end character '|' found (sentinal value). Check around line " + lineNum + " for a missing '|'.");
+                instantTextOutput("\nClick any key to continue.");
+                Console.ReadKey();
+                return String.Empty;
+            }
+            return menu;
         }
     }
 }
